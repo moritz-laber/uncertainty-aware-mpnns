@@ -3,12 +3,6 @@ sgc_lipschitzness.py
 ----------
 
 Experiments & plots on the Lipschitz continuity of SGCs in FCD.
-
-When using this code please cite:
-Chernikova et al. (2025) Robustness and Generalization in Uncertainty-Aware Message Passing Neural Networks.
-
-author: Moritz Laber
-date: October 2025
 """
 
 import jax

@@ -3,12 +3,6 @@ utils.py
 ----------
 
 Utility functions for data generation, training, and uncertainty propagation in MPNNs. 
-
-When using this code please cite:
-Chernikova et al. (2025) Robustness and Generalization in Uncertainty-Aware Message Passing Neural Networks.
-
-author: Moritz Laber
-date: October 2025
 """
 
 import equinox as eqx
