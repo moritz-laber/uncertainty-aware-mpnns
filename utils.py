@@ -21,6 +21,54 @@ from typing import List, Tuple, Callable, Optional
 
 from models import normalized_adjacency, softplus
 
+
+### LIPSCHITZ ###
+def gcn_lipschitz(gcn : eqx.Module, A:sparse.BCOO) -> float:
+    """Estimate an upper bound on the Lipschitz constant (in 2-norm) of a GCN model.
+    
+    Input
+    gcn : GCN model as equinox module
+    A : adjacency matrix of the graph in sparse.BCOO format.
+    
+    Output
+    C : estimated upper bound on the Lipschitz constant of the GCN model.
+    """
+
+    # get the number of layers
+    L = len(gcn.layers)
+
+    # compute the contribution of the nonlinearities to the Lipschitz constant
+    # see e.g., Table 2 of Qi et al. (arXiv 2023) https://arxiv.org/abs/2306.09338
+    if gcn.non_linearity == jax.nn.relu:
+        C = 1.0
+    elif gcn.non_linearity == jax.nn.gelu:
+        C = 1.1
+    elif gcn.non_linearity == jax.nn.tanh:
+        C = 1.0
+    elif gcn.non_linearity == jax.nn.sigmoid:
+        C = 0.25
+    else:
+        raise NotImplementedError("Lipschitz constant for the chosen nonlinearity is not implemented.")
+    
+    # these nonlinearities are used at L-1 layers
+    C = C ** (L - 1)
+
+    # compute normalized adjacency
+    S = normalized_adjacency(A)
+
+    # compute propagation contribution to the Lipschitz constant
+    sigmaS = jnp.linalg.svd(S.todense(), compute_uv=False)[0]
+    C *= sigmaS ** L
+
+    # compute the weight matrix contribution to the Lipschitz constant
+    for i in range(L):
+        Wi = gcn.layers[i].weights
+        sigmaW = jnp.linalg.svd(Wi, compute_uv=False)[0]
+        C *= sigmaW 
+    
+    return C
+
+
 ### SYNTHETIC DATA GENERATION ###
 def construct_precision(A:jnp.array, Lam_edge:jnp.array, Lam_node:jnp.array)-> jnp.array:
     """Construct the precision matrix for a Gaussian Markov Random Field (GMRF).
@@ -122,6 +170,99 @@ def sbm(rng:np.random.Generator, ns:List[int], k_ii:int, k_ij:int) -> Tuple[sp.s
 
     return A, g
 
+### REAL-WORLD DATA LOADING ###
+def edgelist_to_adjacency(edge_list:np.ndarray, num_nodes:int)->sparse.BCOO:
+    """"Convert edgelist to sparse adjacency matrix.
+    
+    Input
+    edge_list : edge list as numpy array of shape (2, num_edges)
+    num_nodes : number of nodes in the graph
+
+    Output
+    A_sparse : sparse adjacency matrix as sparse.BCOO
+    """
+
+    # create scipy.sparse coo matrix
+    A_sparse = sp.sparse.coo_matrix(
+        (np.ones(edge_list.shape[1]),
+        (edge_list[0, :], edge_list[1, :])),
+        shape=(num_nodes, num_nodes),
+        )
+
+    # convert to jax.experimental.sparse.BCOO
+    A_sparse = sparse.BCOO.from_scipy_sparse(A_sparse)
+
+    return A_sparse
+
+def load_dataset(path_to_file:str, num_features:int=None, train_frac:float=None, which_split:int=0, key_split:jax.random.PRNGKey=None)->Tuple[sparse.BCOO, jnp.array, jnp.array, jnp.array, jnp.array]:
+    """Load Dataset from npz file.
+    
+    Input
+    path_to_file : path to the npz file containing the data.
+    num_features : number of features to use. If None all features are used, if integer SVD is used for dimensionality reduction.
+    train_frac : fraction of nodes used for training. If None predefined splits are used, if float random splits are generated using split key.
+    which_split : if predefined splits are used, which split to use.
+    key_split : jax.random.PRNGKey used for random train/test split generation.
+
+    Output
+    A_sparse : sparse adjacency matrix as sparse.BCOO
+    X : node features as jnp.array of shape (num_nodes * num_features,)
+    y : one-hot encoded labels as jnp.array of shape (num_nodes, num_classes)
+    train_idx : indices of training nodes as jnp.array
+    test_idx : indices of test nodes as jnp.array
+    """
+
+    # load data from npz file
+    data = np.load(path_to_file)
+    
+    # extract features
+    X = jnp.asarray(data['X'])
+    num_nodes = X.shape[0]
+    
+    if num_features is None:
+        # raw features
+        num_features = X.shape[1]
+    else:
+        # SVD features
+        Xc = X - jnp.mean(X, axis=0, keepdims=True)
+        _, _, VT = jnp.linalg.svd(Xc, full_matrices=False)
+        X = Xc @ VT.T[:, :num_features]
+    
+    # reshape into the high-dimensional feature vectors
+    X = X.reshape((num_nodes * num_features,))
+    
+    # labels (one-hot encoded)
+    y = jnp.asarray(data['y'])
+    y = jax.nn.one_hot(y, num_classes=jnp.max(y) + 1)
+
+    # train test split
+    if train_frac is None:
+
+        # attempt to use predefined splits
+        try:
+            train_idx_bool = jnp.asarray(data['train_split'])
+            test_idx_bool = jnp.asarray(data['test_split'])
+
+            if len(train_idx_bool)>1:
+                train_idx_bool = train_idx_bool[:, which_split]
+                test_idx_bool = test_idx_bool[:, which_split]
+                
+        except:
+            raise RuntimeError("Dataset does not define train/test splits/")
+    else:
+        # sample train test split as boolean masks
+        train_idx_bool = jax.random.bernoulli(key_split, train_frac, shape=(num_nodes,)).astype(bool)
+        test_idx_bool = ~train_idx_bool
+
+    # convert from boolean mask to indices
+    train_idx = jnp.where(train_idx_bool)[0]
+    test_idx =  jnp.where(~train_idx_bool)[0]
+
+    # create adjacency matrix from edge list
+    A_sparse = edgelist_to_adjacency(data['edge_list'], num_nodes=num_nodes)
+
+    return A_sparse, X, y, train_idx, test_idx
+
 ### UNCERTAINTY PROPAGATION ###
 def relative_error(a:jnp.array, b:jnp.array, p:float=1)-> jnp.array:
     """Compute the relative error between two errors in p-norm.
@@ -183,7 +324,7 @@ def matrix_sqrt(A:np.ndarray, eps:float=1e-10)->np.ndarray:
 
     return Asqrt
 
-def wasserstein_distance(pars1:Tuple[ArrayLike, ArrayLike], pars2:Tuple[ArrayLike, ArrayLike], eps:float=1e-10)->float:
+def wasserstein_distance(pars1:Tuple[ArrayLike, ArrayLike], pars2:Tuple[ArrayLike, ArrayLike], eps:float=1e-10, diag:bool=False)->float:
     """Compute the Wasserstein 2 distance between Gaussians two Gaussian distributions.
     
     Input
@@ -205,38 +346,54 @@ def wasserstein_distance(pars1:Tuple[ArrayLike, ArrayLike], pars2:Tuple[ArrayLik
     Sig1 = np.asarray(Sig1, dtype=np.float64)
     Sig2 = np.asarray(Sig2, dtype=np.float64)
 
-    # ensure matrices are positive definite
-    Sig1 = ensure_psd(Sig1, eps=eps)
-    Sig2 = ensure_psd(Sig2, eps=eps)
 
-    # matrix square root
-    Sig2_sqrt = matrix_sqrt(Sig2, eps=eps)
+    if diag:
+        
+        # assume diagonal covariance
+        sig1 = np.diag(Sig1)
+        sig2 = np.diag(Sig2)
+        nonneg = (sig1 >= 0) & (sig2 >= 0) # safety
+        dist = np.sqrt(np.sum((mu1 - mu2)**2) + np.sum((np.sqrt(sig1[nonneg]) - np.sqrt(sig2[nonneg]))**2))
 
-    # Inner square root
-    SigSigSig = Sig2_sqrt @ Sig1 @ Sig2_sqrt
-    SigSigSig = ensure_psd(SigSigSig, eps=eps)
-    SigSigSig_sqrt = matrix_sqrt(SigSigSig, eps=eps)
+    else:
+        
+        # ensure matrices are positive definite
+        Sig1 = ensure_psd(Sig1, eps=eps)
+        Sig2 = ensure_psd(Sig2, eps=eps)
+    
+        # matrix square root
+        Sig2_sqrt = matrix_sqrt(Sig2, eps=eps)
+    
+        # Inner square root
+        SigSigSig = Sig2_sqrt @ Sig1 @ Sig2_sqrt
+        SigSigSig = ensure_psd(SigSigSig, eps=eps)
+        SigSigSig_sqrt = matrix_sqrt(SigSigSig, eps=eps)
 
-    # Compute squared Wasserstein distance
-    dist = np.sqrt(np.sum((mu1 - mu2) ** 2) + np.trace(Sig1 + Sig2 - 2 * SigSigSig_sqrt))
+        # Compute squared Wasserstein distance
+        dist = np.sqrt(np.sum((mu1 - mu2) ** 2) + np.trace(Sig1 + Sig2 - 2 * SigSigSig_sqrt))
     
     return dist
 
-def estimate_moments(X:jnp.array)-> Tuple[jnp.array, jnp.array]:
+def estimate_moments(X:jnp.array, second_raw:bool=False)-> Tuple[jnp.array, jnp.array]:
     """Estimate mean and covariance from samples.
     
     Input
     X : samples of shape (num_nodes * num_features, num_samples)
+    second_raw : whether to compute raw second moments (True) or central moments (False)
 
     Output
     muX : mean of X (num_nodes * num_features,)
-    SigX : covariance of X (num_nodes * num_features, num_nodes * num_features)
+    SigX : covariance (or raw second moment if second_raw=True) of X (num_nodes * num_features, num_nodes * num_features)
     """
 
     n_samples = X.shape[1]
 
     muX = X.mean(axis=1)
-    SigX = ((X - muX[:, None]) @ (X - muX[:, None]).T) / n_samples
+
+    if second_raw:
+        SigX = (X @ X.T) / n_samples
+    else:
+        SigX = ((X - muX[:, None]) @ (X - muX[:, None]).T) / n_samples
 
     return muX, SigX
 
@@ -260,6 +417,65 @@ def sample_propagation(f:Callable, X:jnp.array)->Tuple[jnp.array, jnp.array]:
 
     return muY, SigY
 
+def sample_propagation_batched(key:jax.random.PRNGKey, f:Callable, mu:jnp.array, sigma:float, num_samples:int, batch_size:int, verbose:bool=False) -> Tuple[jnp.array, jnp.array]:
+    """Generates random Gaussian noise with standard deviation sigma around the mean mu,
+       and propagates samples through the function f using a batched online estimator for
+       mean and covariance of the output.
+
+       Input
+       key : jax random key
+       f : function to propagate samples through f : R^n -> R^m
+       muX : mean vector of shape (n,)
+       sigma : standard deviation of the Gaussian noise (scalar)
+       num_samples : number of samples to draw (integer)
+       batch_size : size of batches to use for propagation (integer)
+       verbose : whether to print progress information (boolean)
+       
+       Output
+       muY : mean of f(X) (m,)
+       SigY : covariance of f(X) (m, m)
+    """
+
+    assert num_samples % batch_size == 0, "num_samples must be divisible by batch_size"
+
+    n_batches = num_samples // batch_size
+    for i in range(0, n_batches):
+
+        if verbose: print(f'Processing batch {i+1}/{n_batches}', end='\r')
+
+        # generate noisy batch
+        if type(sigma)==float:
+            key, key_ = jax.random.split(key)
+            z = jax.random.normal(key_, shape=(mu.shape[0], batch_size))
+            X_batch = mu[:, None] + sigma * z
+        elif sigma.shape==mu.shape:
+            keys = jax.random.split(key, batch_size + 1)
+            key = keys[0]
+            z = jax.vmap(lambda k: jax.random.normal(k, shape=(mu.shape[0],)), out_axes=1)(keys[1:])
+            X_batch = mu[:, None] + sigma[:, None] * z
+        else:
+            raise TypeError("sigma must be either a float or a jnp.ndarray of the same shape as mu")
+
+        # propagate batch
+        Y_batch = jax.vmap(f, in_axes=1, out_axes=1)(X_batch)
+
+        # compute batch moments
+        muY_batch, sY_batch = estimate_moments(Y_batch, second_raw=False)
+        sY_batch *= batch_size
+
+        # update running statistics
+        if i == 0:
+            muY = muY_batch
+            sY = sY_batch
+            delta = 0.
+        else:
+            delta = muY_batch - muY
+            muY += delta * (batch_size / ((i + 1) * batch_size))
+            sY += sY_batch + jnp.outer(delta, delta) * ((i * batch_size) * batch_size)/((i + 1) * batch_size)
+    
+    SigY = sY / num_samples
+
+    return muY, SigY
 
 def linear_propagation(f:Callable, muX:jnp.array, SigX:jnp.array, eps:float=0.0)->Tuple[jnp.array, jnp.array]:
     """Propagate the mean and covariance of a random variable through the linearization of f
@@ -553,7 +769,7 @@ def taylor_nonlinearity(f:Callable, muX:jnp.array, SigX:jnp.array, order:int=1, 
     SigY : propagated covariance (n x n)
     """
 
-    # compute 0, 1, 2 derivatives at muX    
+    # compute 0, 1, 2 derivatives at muX 
     f_mu = f(muX)
     dfdx_mu = jax.vmap(jax.jacfwd(f), in_axes=0, out_axes=0)(muX)
     df2dx2_mu = jax.vmap(jax.jacfwd(jax.jacfwd(f)), in_axes=0, out_axes=0)(muX)
@@ -794,7 +1010,71 @@ def FCD(X:jnp.ndarray, A_sparse:sparse.BCOO, max_samples:int=100, p:int=2, node_
                 if i<j:
                     M = ot.dist(XS[i, :, :max_id].T, XS[j, :, :max_id].T, metric=metric)
                     G = ot.emd(ot.unif(max_id), ot.unif(max_id), M)
-                    dXS.append(np.sqrt(np.sum(G * M)).item())
+                    if p==1:
+                        dXS.append(np.sum(G * M).item())
+                    elif p==2:
+                        dXS.append(np.sqrt(np.sum(G * M)).item())
 
     dXS = jnp.asarray(dXS)
     return dXS
+
+def wasserstein_sample(X1:jnp.ndarray, X2:jnp.ndarray, p:int=2)->jnp.ndarray:
+    """"Compute the pairwise Wasserstein distance between nodes based on samples of their features.
+    
+    Input 
+    X1 : feature samples of the first set of nodes (num_nodes_1, num_features, num_samples) or (num_nodes_1, num_samples)
+    X2 : feature samples of the second set of nodes (num_nodes_2, num_features, num_samples) or (num_nodes_2, num_samples)
+    p  : p-norm to use for the Wasserstein distance (1 or 2)
+
+    Output
+    d : vector of pairwise distances between the nodes in X1 and X2
+    """
+
+    # ensure numpy
+    X1 = np.asarray(X1)
+    X2 = np.asarray(X2)
+
+    # set metric
+    if p==1:
+        metric = 'euclidean'
+    elif p==2:
+        metric = 'sqeuclidean'
+    else:
+        raise ValueError('p must be 1 or 2.')
+    
+    # test whether the node sets are the same
+    if X1.shape == X2.shape and jnp.all(X1 == X2):
+        same_data = True
+    else:
+        same_data = False
+
+    # optimal transport
+    d = []
+    for i in tqdm.tqdm(range(X1.shape[0])):
+        for j in range(X2.shape[0]):
+
+            # avoid overcounting if the node sets are the same
+            if same_data and i >= j:
+                continue
+            else:
+                
+                # scalar node features
+                if len(X1.shape)==2 and len(X2.shape)==2:
+                    M = ot.dist(X1[i, None, :].T, X2[j, None, :].T, metric=metric)
+                    G = ot.emd(ot.unif(X1.shape[1]), ot.unif(X2.shape[1]), M)
+                # vector node features
+                elif len(X1.shape)==3 and len(X2.shape)==3:
+                    M = ot.dist(X1[i, :, :].T, X2[j, :, :].T, metric=metric)
+                    G = ot.emd(ot.unif(X1.shape[2]), ot.unif(X2.shape[2]), M)
+                else:
+                    raise RuntimeError('X1, X2 must both be either 2D or 3D arrays.')
+                
+                # metric
+                if p==1:
+                    d.append(np.sum(G * M).item())
+                elif p==2:
+                    d.append(np.sqrt(np.sum(G * M)).item())
+                else:
+                    raise ValueError('p must be 1 or 2.')
+
+    return jnp.asarray(d)
