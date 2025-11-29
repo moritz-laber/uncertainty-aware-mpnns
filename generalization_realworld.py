@@ -169,7 +169,8 @@ with open(f'{output_dir}{dataset}/generalization_model=sgc_data={dataset}_l={num
         'num_classes' : num_classes,
         'num_features' : num_features,
         'dist_XS': dX,
-        'dist_logits': dlosses,
+        'dist_logits': dlogits,
+        'dist_losses': dlosses,
         'lipschitz_FCD': CL,
         'loss_lipschitz_l2' : Cl,
         'M' : M, 
@@ -179,7 +180,7 @@ with open(f'{output_dir}{dataset}/generalization_model=sgc_data={dataset}_l={num
         'Chi' : Chi,
         'bound' : bound,
         'empirical_LHS' : lhs,
-        'spearman':sp.stats.spearmanr(dX, dlosses)[0],
-        'pearson':sp.stats.pearsonr(dX, dlosses)[0],
+        'spearman':sp.stats.spearmanr(dX, dlogits)[0],
+        'pearson':sp.stats.pearsonr(dX, dlogits)[0],
         'seed' : seed
     }, f)

@@ -190,7 +190,8 @@ with open(f'{output_dir}{corr}/generalization_model=sgc_corr={corr}_l={num_layer
         'num_classes' : num_classes,
         'num_features' : num_features,
         'dist_XS':dX,
-        'dist_logits':dlosses,
+        'dist_losses':dlosses,
+        'dist_logits':dlogits,
         'lipschitz_FCD': CL,
         'loss_lipschitz_l2' : Cl,
         'M' : M, 
@@ -200,8 +201,8 @@ with open(f'{output_dir}{corr}/generalization_model=sgc_corr={corr}_l={num_layer
         'K' : K,
         'bound' : bound,
         'empirical_LHS' : lhs,
-        'spearman':sp.stats.spearmanr(dX, dlosses)[0],
-        'pearson':sp.stats.pearsonr(dX, dlosses)[0]
+        'spearman':sp.stats.spearmanr(dX, dlogits)[0],
+        'pearson':sp.stats.pearsonr(dX, dlogits)[0]
     }, f)
 
 
