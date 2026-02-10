@@ -1,66 +1,94 @@
 """
-moment_comparison_plots.py
-----------
+plot_moments_synthetic.py
 
-Plots for the comparison of different moment propagation methods for MPNNs.
+Plots for comparing moment propagation methods on synthetic data.
+
+M. Laber, 2026/02
 """
 
+## IMPORTS ##
+import os
 import pickle
-from unittest import result
 import numpy as np
 import matplotlib.pyplot as plt
 
-### PARAMETERS ###
-result_dir = './results/moment_comparison/'
-plot_dir = './plots/moment_comparison/'
+## PARAMETERS ##
+savefig = True                          # whether to save the figure
+corr = 'dndf'                           # correlation name
+l = 3                                   # number of layers
+num_hidden = 16                         # number of hidden units
+input_dir = './experiments/synthetic/'  # directory to load results
+output_dir = './plots/moments/'         # directory to save results
 
-distance = 'wasserstein'        # distance: Wasserstein, rel_mu, rel_sig, fro_mu, fro_sig
-correlation = 'dndf'            # dndf, indf, inif
-fs = 12                         # font size
-width = 0.2                     # width of bars
-rot = 60                        # rotation of x-ticks
-ymax = 0.95                     # upper limit y-axis
-savefig = True                  # whether to save the figure
+figsize = (3.3, 0.8)    # figure size
+tick_fs = 12            # tick font size 
+label_fs = 14           # y-axis label font size
+label_fs_2 = 15         # x-axis label font size
+legend_fs = 12          # legend font size
+title_fs = 14           # title font size
+ylim = (5e-2, 5e2)      # y-axis limits
+logy = True             # whether to use log scale on y-axis
 
-### MAIN ###
+## MAIN ##
+
+# constants
+error_type = 'wasserstein'              # error type to plot
+label_dict = {
+    'wasserstein' : r'$W_2(\mathcal{N}, \mathcal{N}^\mathrm{MC})$'
+}
+
+corr_dict = {
+    'inif' : r'Independent nodes independent features (inif)',
+    'indf' : r'Independent nodes dependent features (indf)',
+    'dndf' : r'Dependent nodes, dependent features $\mathtt{dndf}$'
+}
+
+color_dict = {
+    'tanh' : '#ff474c',
+    'relu' : '#0485d1', 
+    'gelu' : '#40a368',
+    'sigmoid' : '#f2ab15'
+}
+
+legend_dict = {
+    'gelu' : r'$\mathtt{GELU}$',
+    'relu' : r'$\mathtt{ReLU}$',
+    'tanh' : r'$\mathtt{tanh}$',
+    'sigmoid' : r'$\mathtt{sigmoid}$'
+}
 
 # load data
-result = {}
-for nonlin_str in ['relu', 'tanh', 'gelu']:
-    with open(f'{result_dir}comparison_corr={correlation}_fun={nonlin_str}.pkl', 'rb') as f:
-
-        result[nonlin_str] = pickle.load(f)
-
-
-
-
-w_list = [np.asarray(result[nonlin_str]['results'][distance]) for nonlin_str in ['tanh', 'relu', 'gelu']]
+filelist = os.listdir(f'{input_dir}{corr}/')
+results = {}
+for file in filelist:
+    if 'comparison' in file and f'l={l}' in file and f'hidden={num_hidden}' in file:
+        with open(f'./experiments/synthetic/{corr}/{file}', 'rb') as f:
+            result = pickle.load(f)
+        nonlin = result['params']['nonlinearity']
+        error = result['results'][error_type]
+        results[nonlin] = error
 
 # create plot
-fig = plt.figure(figsize=(7,4))
+fig = plt.figure(figsize=(7,3))
 ax = fig.add_subplot(111)
 
-for w, dx, c, l in zip(w_list, [-width, 0., width], ['#ff474c','#0485d1','#40a368'], ['tanh', 'relu', 'gelu']):
+for i, nonlin_result in enumerate(results.items()):
+    nonlin, result = nonlin_result
+    ax.bar(1.5*np.arange(0, len(result))+(0.25*i - 0.5), result, label=legend_dict[nonlin], width=0.25, align='edge', color=color_dict[nonlin])
 
-    w = np.delete(w, 2)
-    ax.bar(np.arange(w.shape[0])-dx, w, color=c, label=l, width=width)
+ax.set_xticks(1.5*np.arange(0, len(result)))
+ax.set_xticklabels([r'$\mathtt{T1}$', r'$\mathtt{T2}$-$\mathtt{Tr}$', r'$\mathtt{PTPE}$', r'$\mathtt{1d}$-$\mathtt{T1}$', r'$\mathtt{1d}$-$\mathtt{T2}$-$\mathtt{Tr}$', r'$\mathtt{1d}$-$\mathtt{T2}$-$\mathtt{GC}$'],
+                   rotation=0)
 
-ax.legend()
-ax.set_xticks(np.arange(w.shape[0]), [r'$\mathtt{T1}$',
-                                      r'$\mathtt{T2}$'+'-'+r'$\mathtt{Tr}$',
-                                      r'$\mathtt{PTPE}$',
-                                      r'$1$d'+'-'+r'$\mathtt{T1}$',
-                                      r'$1$d'+'-'+r'$\mathtt{T2}$'+'-'+r'$\mathtt{Tr}$',
-                                      r'$1$d'+'-'+r'$\mathtt{T2}$'+'-'+r'$\mathtt{GC}$'
-                                     ], rotation=rot)
-
-ax.set_ylabel(r'$W_2(\mathcal{N}(\mu, \Sigma),\mathcal{N}(\mu_\mathrm{sample},\Sigma_\mathrm{sample}$)', fontsize=fs)
-ax.tick_params(labelsize=fs-2)
-ax.set_ylim(0., ymax)
+if logy: ax.set_yscale('log')
+ax.tick_params(axis='y', labelsize=tick_fs)
+ax.tick_params(axis='x', labelsize=label_fs_2)
+ax.legend(fontsize=legend_fs, loc='upper left', ncol=4)
+ax.set_ylim(*ylim)
+ax.set_ylabel(label_dict[error_type], fontsize=label_fs)
 fig.tight_layout()
 
-# save figure
+plt.show()
+
 if savefig:
-    fig.savefig(f'{plot_dir}comparison_W2_{correlation}.png', dpi=600)
-    fig.savefig(f'{plot_dir}comparison_W2-{correlation}.pdf')
-    fig.savefig(f'{plot_dir}comparison_W2-{correlation}.svg')
+    fig.savefig(f'{output_dir}pdf/moment_comparrison_corr={corr}_l={l}_num_hidden={num_hidden}_err={error_type}.pdf')
