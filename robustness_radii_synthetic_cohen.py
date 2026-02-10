@@ -7,13 +7,14 @@ the method of Cohen et al. [1].
 
 [1] Cohen et al. (ICML 2019) Certified Robustness via Randomized Smoothing
 https://proceedings.mlr.press/v97/cohen19c.html .
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
 import jax
 import jax.numpy as jnp
 import jax.experimental.sparse as sparse
-import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 import sys

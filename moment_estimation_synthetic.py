@@ -4,15 +4,14 @@ moment_estimation_synthetic.py
 
 Estimates the moments of the output distribution
 on synthetic data and saves them.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 import jax.experimental.sparse as sparse
-import numpy as np
-import optax
 import pickle
 import time
 import sys

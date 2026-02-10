@@ -3,13 +3,14 @@ robustness_radii_synthetic.py
 ----------
 
 Determine robustnes radii on synthetic data using Theorem 1.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
 import jax
 import jax.numpy as jnp
 import jax.experimental.sparse as sparse
-import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 import sys

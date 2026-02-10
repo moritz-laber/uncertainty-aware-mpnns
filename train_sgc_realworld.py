@@ -4,17 +4,15 @@ train_sgc_realworld.py
 
 Trains a SGC model with a given number of layers with
 a given number of iterations.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
 import equinox as eqx
 import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as sparse
-import numpy as np
 import optax
 import pickle
-import time
 
 from models import *
 from utils import *

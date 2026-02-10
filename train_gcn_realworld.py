@@ -4,17 +4,15 @@ train_gcn_realworld.py
 
 Trains GCN model on real-world datasets for a given number of layers
 and hidden units iterating over relu, gelu, tanh, sigmoid nonlinearities.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
 import equinox as eqx
 import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as sparse
-import numpy as np
 import optax
 import pickle
-import time
 
 from models import *
 from utils import *
@@ -55,7 +53,7 @@ data = load_dataset(
     train_frac=train_frac,
     key_split=key_split
     )
-A_sparse, X, y, train_idx, test_idx = data
+A_sparse, X, y, train_idx, test_idx = data # type: ignore
 num_nodes = A_sparse.shape[0]
 num_classes = y.shape[1]
 

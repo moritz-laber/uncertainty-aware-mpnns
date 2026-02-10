@@ -5,6 +5,8 @@ create_dataset.py
 Generator for the synthetic datasets: Graphs are
 sampled from SBM with two groups and features are
 samples from a Gaussian Markov Random Field.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
@@ -12,7 +14,6 @@ import jax
 import jax.numpy as jnp
 import jax.experimental.sparse as sparse
 import numpy as np
-import optax
 import pickle
 import sys
 

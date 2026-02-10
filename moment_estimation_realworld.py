@@ -4,15 +4,14 @@ moment_estimation_realworld.py
 
 Estimates the moments of the output distribution
 on real-world data and saves them.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
 import equinox as eqx
 import jax
-import jax.numpy as jnp
-import jax.experimental.sparse as sparse
 import numpy as np
-import optax
 import pickle
 import time
 import sys

@@ -2,7 +2,9 @@
 utils.py
 ----------
 
-Utility functions for data generation, training, and uncertainty propagation in MPNNs. 
+Utility functions for data generation, training, and uncertainty propagation in MPNNs.
+
+M. Laber, 2026/02
 """
 
 import equinox as eqx
@@ -13,7 +15,6 @@ import jax.numpy as jnp
 import jax.scipy as jsp
 from jax.typing import ArrayLike
 import numpy as np
-import optax
 import ot
 import scipy as sp
 import tqdm

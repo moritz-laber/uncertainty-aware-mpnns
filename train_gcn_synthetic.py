@@ -4,17 +4,16 @@ train_gcn_synthetic.py
 
 Trains GCN model on synthetic datasets for a given correlation
 and number of layers and hidden units iterating over nonlinearities.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 import jax.experimental.sparse as sparse
-import numpy as np
 import optax
 import pickle
-import time
 
 from models import *
 from utils import *

@@ -6,6 +6,8 @@ Utility functions for evaluating the Cohen et al. [1] baseline.
 
 [1] Cohen et al. (ICML 2019) Certified Robustness via Randomized Smoothing
 https://proceedings.mlr.press/v97/cohen19c.html.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
@@ -13,10 +15,8 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import scipy as sp
-import numpy as np
-import equinox as eqx
 
-from typing import Tuple, Callable, Union
+from typing import Tuple, Callable
 
 from utils import *
 from models import  *
@@ -139,7 +139,7 @@ def predict_cohen(key:jax.random.PRNGKey, f:Callable, sigma:float, X:jnp.array, 
     
     return jnp.array(ypred)
 
-def certify_cohen(key:jax.random.PRNGKey, f:Callable, sigma:float, X:jnp.array, num_samples:Union[int, Tuple[int,int]], alpha:float, verbose:bool=True)->Tuple[jnp.array, jnp.array]:
+def certify_cohen(key:jax.random.PRNGKey, f:Callable, sigma:float, X:jnp.array, num_samples:int | Tuple[int,int], alpha:float, verbose:bool=True)->Tuple[jnp.array, jnp.array]:
     """Prediction with certified radii using Cohen's method.
     
     Input
@@ -157,10 +157,10 @@ def certify_cohen(key:jax.random.PRNGKey, f:Callable, sigma:float, X:jnp.array, 
     """
 
     # check that num_samples is valid
-    if len(num_samples) == 1:
+    if isinstance(num_samples, int):
         num_samples0 = num_samples
         num_samples1 = num_samples
-    elif len(num_samples) == 2:
+    elif isinstance(num_samples, tuple) and len(num_samples) == 2:
         num_samples0 = num_samples[0]
         num_samples1 = num_samples[1]
     else:

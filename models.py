@@ -3,6 +3,8 @@ models.py
 ----------
 
 SGC and GCN implementations, and various helper functions.
+
+M. Laber, 2026/02
 """
 
 import jax
@@ -10,7 +12,6 @@ from jax import lax
 import jax.experimental.sparse as sparse
 import jax.numpy as jnp
 import equinox as eqx
-import optax
 from typing import List, Tuple, Callable, Optional
 
 def softplus(x:jnp.ndarray, beta:float=10.0)->jnp.ndarray:

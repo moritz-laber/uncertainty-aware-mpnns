@@ -3,14 +3,12 @@ moment_comparison_realworld.py
 ----------
 
 Compares moments obtained on real-world data.
+
+M. Laber, 2026/02
 """
 
 ### IMPORTS ###
-import jax
 import jax.numpy as jnp
-import jax.experimental.sparse as sparse
-import numpy as np
-import optax
 import pickle
 import sys
 
