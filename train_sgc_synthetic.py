@@ -14,7 +14,6 @@ import jax.experimental.sparse as sparse
 import numpy as np
 import optax
 import pickle
-import time
 
 from models import *
 from utils import *
@@ -23,6 +22,7 @@ import sys
 
 ### PARAMETERS ###
 save_result = True                    # whether to save model and hyperparameters
+inductive = True                      # whether to use an inductive split
 data_dir = './data/synthetic/'        # directory with datasets
 result_dir = './models/'              # directory to save trained model
 graph_num = 0                         # network index
@@ -32,6 +32,7 @@ num_hidden = 16                       # number of hidden units
 num_reps = 1000                       # number of training iterations
 eta = 1e-3                            # initial learning rate of AdaBelief
 seed = 26216                          # jax seed : 26216
+test_graphs = [1,2,3,4,5]             # graphs to evaluate on in the inductive setting
 
 ### MAIN SCRIPT ###
 
@@ -43,16 +44,19 @@ with open(f'{data_dir}sbm_corr={correlation}_graphnum={graph_num}.pkl', 'rb') as
     dataset = pickle.load(f)
 
 Adense = dataset['data']['A']
-A_sparse = sparse.BCOO.fromdense(Adense)
-
-X = dataset['data']['muX']
-y = dataset['data']['y']
-train_idx = dataset['data']['train_idx']
-test_idx = dataset['data']['test_idx']
-
+A_train = sparse.BCOO.fromdense(Adense)
 num_classes = dataset['params']['num_classes']
 num_nodes = dataset['params']['num_nodes']
 num_features = dataset['params']['num_features']
+
+X = dataset['data']['muX']
+y = dataset['data']['y']
+
+if inductive:
+    train_idx = jnp.arange(num_nodes)
+else:
+    train_idx = dataset['data']['train_idx']
+    test_idx = dataset['data']['test_idx']
 
 ## Train Model ##
 
@@ -71,15 +75,42 @@ Xdata = X.reshape(num_nodes, num_features)
 sgc, sgc_loss_list = train(
     sgc,
     optax.adabelief(eta),
-    (A_sparse, Xdata, y),
+    (A_train, Xdata, y),
     train_idx,
     num_reps=num_reps
 )
 
 # evaluate model
-test_acc = accuracy(sgc, (A_sparse, Xdata, y), test_idx)
-train_acc = accuracy(sgc, (A_sparse, Xdata, y), train_idx)
-print(f'Test accuracy: {test_acc:.4f}, Train accuracy: {train_acc:.4f}')
+train_acc = accuracy(sgc, (A_train, Xdata, y), train_idx)
+print(f'Train accuracy: {train_acc:.4f}')
+
+if not inductive:
+    test_acc = accuracy(sgc, (A_train, Xdata, y), test_idx)
+    test_accs = [test_acc]
+    print(f'Train accuracy: {train_acc:.4f}, Test accuracy: {test_acc:.4f}')
+else:
+    test_accs = []
+    for ig in test_graphs:
+        
+        with open(f'{data_dir}sbm_corr={correlation}_graphnum={ig}.pkl', 'rb') as f:
+            test_dataset = pickle.load(f)
+
+        ytest = test_dataset['data']['y']
+        
+        Adense = test_dataset['data']['A']
+        A_test = sparse.BCOO.fromdense(Adense)
+        
+        num_classes_test = test_dataset['params']['num_classes']
+        num_features_test = test_dataset['params']['num_features']
+        num_nodes_test = test_dataset['params']['num_nodes']
+        Xtest = test_dataset['data']['muX'].reshape(num_nodes_test, num_features_test)
+        
+        test_idx = jnp.arange(num_nodes_test)
+        test_acc = accuracy(sgc, (A_test, Xtest, ytest), test_idx)
+        test_accs.append(test_acc)
+
+        print(f'Test accuracy on graph {ig}: {test_acc:.6f}')
+
 
 # save trained model
 if save_result:
@@ -97,7 +128,7 @@ param_dict = {'params' : {
                 'num_layers' : num_layers,
                 'train_frac' : float(train_idx.shape[0])/num_nodes,
                 'test_frac' : float(test_idx.shape[0])/num_nodes,
-                'test_acc' : test_acc,
+                'test_acc' : np.mean(test_accs),
                 'train_acc' : train_acc,
                 'learning_rate' : eta,
                 'num_reps' : num_reps,

@@ -8,9 +8,7 @@ Conducts generalization experiments on real-world data.
 ### IMPORTS ###
 import jax
 import jax.numpy as jnp
-import jax.experimental.sparse as sparse
 import numpy as np
-import optax
 import pickle
 import sys
 
@@ -27,7 +25,7 @@ num_layers = int(sys.argv[2])    # number of layers
 num_reps = int(sys.argv[3])      # number of training repetitions
 noise_level = 0.05               # noise level
 num_samples_fcd = 100            # number of samples to estimate Wasserstein distance
-Cl = 1.0                         # loss function Lipschitz constant
+Cl = 0.5                         # loss function Lipschitz constant
 p = 1                            # metric used in the Wasserstein distance
 epsilon = 0.99                   # uniform robustness constant
 delta = 0.05                     # error probability
@@ -72,10 +70,11 @@ data = load_dataset(
     num_features=num_features,
     which_split=which_split,
     train_frac=train_frac,
-    key_split=key_split
+    key_split=key_split,
+    inductive=True
     )
-A_sparse, X, y, train_idx, test_idx = data
-num_nodes = A_sparse.shape[0]
+A_train, A_test, X, y, train_idx, test_idx = data
+num_nodes = A_train.shape[0]
 num_classes = y.shape[1]
 X = X.reshape(num_nodes, num_features)
 num_test_nodes = test_idx.shape[0]
@@ -94,34 +93,38 @@ Xsamples = X[:,:,None] + noise
 # compute feature convolution distance (input space)
 dX = FCD(
     Xsamples.reshape(num_nodes * num_features, num_samples_fcd),
-    A_sparse,
+    A_test,
     max_samples=num_samples_fcd,
     p=p,
     node_subset=np.arange(num_nodes)
 )
 
 # get losses over all samples
-logits = jax.vmap(lambda X: sgc(X.reshape(num_nodes, num_features), A_sparse, final_embedding=True), in_axes=2, out_axes=2)(Xsamples)
-yprobs = jax.nn.softmax(logits, axis=1)
-losses = -jnp.sum(y[:,:,None] * jnp.log(yprobs), axis=1)
+logits_test = jax.vmap(lambda X: sgc(X.reshape(num_nodes, num_features), A_test, final_embedding=True), in_axes=2, out_axes=2)(Xsamples)
+yprobs_test = jax.nn.softmax(logits_test, axis=1)
+losses_test = -jnp.sum(y[:,:,None] * jnp.log(yprobs_test), axis=1)
+
+logits_train = jax.vmap(lambda X: sgc(X.reshape(num_nodes, num_features), A_train, final_embedding=True), in_axes=2, out_axes=2)(Xsamples)
+yprobs_train = jax.nn.softmax(logits_train, axis=1)
+losses_train = -jnp.sum(y[:,:,None] * jnp.log(yprobs_train), axis=1)
 
 # compute the Wasserstein distance in loss space between all nodes
 dlosses = wasserstein_sample(
-    losses,
-    losses,
+    losses_test,
+    losses_test,
     p=p
 )
 
 # compute the Wasserstein distance in logit space between all nodes
 dlogits = wasserstein_sample(
-    logits,
-    logits,
+    logits_test,
+    logits_test,
     p=p
 )
 
 # extract the loss on the training set
-train_losses = losses[train_idx, :]
-test_losses = losses[test_idx, :]
+train_losses = losses_train[train_idx, :]
+test_losses = losses_test[test_idx, :]
 
 lhs = wasserstein_sample(
     test_losses,
@@ -161,16 +164,15 @@ bound = (
 print(f'Bound: {bound:.4f}')
 
 ## Save Results ##
+## Save Results ##
 with open(f'{output_dir}{dataset}/generalization_model=sgc_data={dataset}_l={num_layers}_reps={num_reps}.pkl', 'wb') as f:
     pickle.dump({
         'dataset' : dataset,
         'noise_level' : noise_level,
         'num_layers' : num_layers,
-        'num_classes' : num_classes,
-        'num_features' : num_features,
         'dist_XS': dX,
         'dist_logits': dlogits,
-        'dist_losses': dlosses,
+        'dist_losses' : dlosses,
         'lipschitz_FCD': CL,
         'loss_lipschitz_l2' : Cl,
         'M' : M, 

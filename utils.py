@@ -194,7 +194,8 @@ def edgelist_to_adjacency(edge_list:np.ndarray, num_nodes:int)->sparse.BCOO:
 
     return A_sparse
 
-def load_dataset(path_to_file:str, num_features:int=None, train_frac:float=None, which_split:int=0, key_split:jax.random.PRNGKey=None)->Tuple[sparse.BCOO, jnp.array, jnp.array, jnp.array, jnp.array]:
+
+def load_dataset(path_to_file:str, num_features:int|None=None, train_frac:float|None=None, which_split:int=0, inductive:bool=False, key_split:jax.random.PRNGKey=None)->Tuple[sparse.BCOO, jnp.array, jnp.array, jnp.array, jnp.array] | Tuple[sparse.BCOO, sparse.BCOO, jnp.array, jnp.array, jnp.array, jnp.array]:
     """Load Dataset from npz file.
     
     Input
@@ -202,6 +203,7 @@ def load_dataset(path_to_file:str, num_features:int=None, train_frac:float=None,
     num_features : number of features to use. If None all features are used, if integer SVD is used for dimensionality reduction.
     train_frac : fraction of nodes used for training. If None predefined splits are used, if float random splits are generated using split key.
     which_split : if predefined splits are used, which split to use.
+    inductive : whether to use inductive training, i.e., also exclude links to test nodes from the adjacency matrix.
     key_split : jax.random.PRNGKey used for random train/test split generation.
 
     Output
@@ -243,7 +245,7 @@ def load_dataset(path_to_file:str, num_features:int=None, train_frac:float=None,
             train_idx_bool = jnp.asarray(data['train_split'])
             test_idx_bool = jnp.asarray(data['test_split'])
 
-            if len(train_idx_bool)>1:
+            if len(train_idx_bool.ndim)>1:
                 train_idx_bool = train_idx_bool[:, which_split]
                 test_idx_bool = test_idx_bool[:, which_split]
                 
@@ -259,10 +261,17 @@ def load_dataset(path_to_file:str, num_features:int=None, train_frac:float=None,
     test_idx =  jnp.where(~train_idx_bool)[0]
 
     # create adjacency matrix from edge list
-    A_sparse = edgelist_to_adjacency(data['edge_list'], num_nodes=num_nodes)
+    edge_list = data['edge_list']
+    A_test = edgelist_to_adjacency(edge_list, num_nodes=num_nodes)
 
-    return A_sparse, X, y, train_idx, test_idx
+    if inductive:
+        select = np.isin(edge_list[0,:], train_idx) & np.isin(edge_list[1,:], train_idx)
+        A_train = edgelist_to_adjacency(edge_list[:, select], num_nodes=num_nodes)
+        return A_train, A_test, X, y, train_idx, test_idx
+    else:
+        return A_test, X, y, train_idx, test_idx
 
+    
 ### UNCERTAINTY PROPAGATION ###
 def relative_error(a:jnp.array, b:jnp.array, p:float=1)-> jnp.array:
     """Compute the relative error between two errors in p-norm.
@@ -417,7 +426,7 @@ def sample_propagation(f:Callable, X:jnp.array)->Tuple[jnp.array, jnp.array]:
 
     return muY, SigY
 
-def sample_propagation_batched(key:jax.random.PRNGKey, f:Callable, mu:jnp.array, sigma:float, num_samples:int, batch_size:int, verbose:bool=False) -> Tuple[jnp.array, jnp.array]:
+def sample_propagation_batched(key:jax.random.PRNGKey, f:Callable, mu:jnp.array, sigma:float|jnp.ndarray, num_samples:int, batch_size:int, verbose:bool=False) -> Tuple[jnp.array, jnp.array]:
     """Generates random Gaussian noise with standard deviation sigma around the mean mu,
        and propagates samples through the function f using a batched online estimator for
        mean and covariance of the output.
@@ -448,11 +457,11 @@ def sample_propagation_batched(key:jax.random.PRNGKey, f:Callable, mu:jnp.array,
             key, key_ = jax.random.split(key)
             z = jax.random.normal(key_, shape=(mu.shape[0], batch_size))
             X_batch = mu[:, None] + sigma * z
-        elif sigma.shape==mu.shape:
+        elif sigma.shape==mu.shape: # type: ignore
             keys = jax.random.split(key, batch_size + 1)
             key = keys[0]
             z = jax.vmap(lambda k: jax.random.normal(k, shape=(mu.shape[0],)), out_axes=1)(keys[1:])
-            X_batch = mu[:, None] + sigma[:, None] * z
+            X_batch = mu[:, None] + sigma[:, None] * z # type: ignore
         else:
             raise TypeError("sigma must be either a float or a jnp.ndarray of the same shape as mu")
 
@@ -884,7 +893,7 @@ def taylor_gcn(gcn:eqx.Module, A:sparse.BCOO, final_embedding:bool, muX:jnp.arra
         if order==1:
             muY, SigY = linear_propagation(gcn.final_non_linearity, mu, Sig, eps=eps)
         elif order==2:
-            muY, SigY = quadratic_propagation(gcn.final_non_linearity, mu, Sig, eps=eps, gaussian_closure=gaussian_closure)
+            muY, SigY = quadratic_propagation(gcn.final_non_linearity, mu, Sig, eps=eps)
         else:
             raise NotImplementedError("Order needs to be 1 or 2.")
 
