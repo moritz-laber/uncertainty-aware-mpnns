@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "Uncertainty Aware Message Passing Neural Networks."
+type: software
+message: "If you use this work, please cite the paper below."
+authors:
+  - given-names: Moritz
+    family-names: Laber
+repository-code: "https://github.com/moritz-laber/uncertainty-aware-mpnns"
+
+preferred-citation:
+  type: conference-paper
+  title: "Robustness and Generalization in Uncertainty-Aware Message Passing Neural Networks"
+  authors:
+  - given-names: Alesia
+    family-names: Chernikova
+  - given-names: Moritz
+    family-names: Laber
+  - given-names: Narayan G.
+    family-names: Sabhahit
+  - given-names: Eliassi-Rad
+    family-names: Tina
+  conference:
+    name: "The 29th International Conference on Artificial Intelligence and Statistics"
+    acronym: "AISTATS"
+    location: "Tangier, Morocco"
+  year: 2026
+  url: "https://openreview.net/forum?id=BcqtGTw9OZ"
