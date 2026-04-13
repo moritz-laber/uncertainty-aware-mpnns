@@ -7,8 +7,7 @@ You can find the paper with appendices in this repository as `robustness_and_gen
 If you use the paper or the code in your work please cite:
 
 ```bibtex
-@inproceedings{
-    chernikova2026robustness,
+@inproceedings{chernikova2026robustness,
     title={Robustness and Generalization in Uncertainty-Aware Message Passing Neural Networks},
     author={Alesia Chernikova and Moritz Laber and Narayan G. Sabhahit and Tina Eliassi-Rad},
     booktitle={The 29th International Conference on Artificial Intelligence and Statistics},
